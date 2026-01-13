@@ -55,3 +55,4 @@ appsettings.*.json
 
 # Logs
 *.log
+.claude/settings.local.json
