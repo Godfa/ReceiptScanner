@@ -8,13 +8,16 @@ namespace ReceiptScanner.API.Services;
 public class ReceiptScannerService : IReceiptScannerService
 {
     private readonly IEnumerable<IReceiptScannerProvider> _providers;
+    private readonly IReceiptCacheService _cacheService;
     private readonly ILogger<ReceiptScannerService> _logger;
 
     public ReceiptScannerService(
         IEnumerable<IReceiptScannerProvider> providers,
+        IReceiptCacheService cacheService,
         ILogger<ReceiptScannerService> logger)
     {
         _providers = providers;
+        _cacheService = cacheService;
         _logger = logger;
     }
 
@@ -24,32 +27,54 @@ public class ReceiptScannerService : IReceiptScannerService
         string providerName = "auto",
         CancellationToken cancellationToken = default)
     {
+        // Check cache first to avoid expensive API calls
+        var cachedResult = _cacheService.GetCachedResult(imageData, language, providerName);
+        if (cachedResult != null)
+        {
+            _logger.LogInformation("Returning cached result (saves API quota!)");
+            return cachedResult with
+            {
+                Warnings = cachedResult.Warnings
+                    .Concat(new[] { "Result from cache (no API call made)" })
+                    .ToList()
+            };
+        }
+
         _logger.LogInformation(
             "Scanning receipt with provider: {Provider}, language: {Language}, size: {Size} bytes",
             providerName,
             language,
             imageData.Length);
 
+        ScannedReceiptResult result;
+
         if (providerName.ToLower() == "auto")
         {
-            return await ScanWithFallbackAsync(imageData, language, cancellationToken);
+            result = await ScanWithFallbackAsync(imageData, language, cancellationToken);
         }
-
-        // Use specific provider
-        var provider = _providers.FirstOrDefault(p =>
-            p.ProviderName.Equals(providerName, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null)
+        else
         {
-            throw new ArgumentException($"Unknown provider: {providerName}");
+            // Use specific provider
+            var provider = _providers.FirstOrDefault(p =>
+                p.ProviderName.Equals(providerName, StringComparison.OrdinalIgnoreCase));
+
+            if (provider == null)
+            {
+                throw new ArgumentException($"Unknown provider: {providerName}");
+            }
+
+            if (!provider.IsAvailable())
+            {
+                throw new InvalidOperationException($"Provider {providerName} is not available/configured");
+            }
+
+            result = await provider.ScanReceiptAsync(imageData, language, cancellationToken);
         }
 
-        if (!provider.IsAvailable())
-        {
-            throw new InvalidOperationException($"Provider {providerName} is not available/configured");
-        }
+        // Cache the result to avoid future API calls for same receipt
+        _cacheService.CacheResult(imageData, language, providerName, result);
 
-        return await provider.ScanReceiptAsync(imageData, language, cancellationToken);
+        return result;
     }
 
     public IEnumerable<string> GetAvailableProviders()

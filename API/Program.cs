@@ -1,3 +1,4 @@
+using ReceiptScanner.API.Middleware;
 using ReceiptScanner.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,15 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
+// Add memory cache for receipt results (reduces API calls for Free tier)
+builder.Services.AddMemoryCache(options =>
+{
+    options.SizeLimit = 100; // Cache up to 100 receipt results
+});
+
+// Register cache service
+builder.Services.AddSingleton<IReceiptCacheService, ReceiptCacheService>();
 
 // Register HttpClient for Ollama
 builder.Services.AddHttpClient("Ollama");
@@ -50,6 +60,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+
+// Add rate limiting middleware (protects Azure Free tier quota)
+app.UseMiddleware<RateLimitingMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
 

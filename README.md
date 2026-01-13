@@ -166,6 +166,33 @@ Health check -endpoint.
 }
 ```
 
+### GET /api/receipts/cache/stats
+
+Näyttää cache-tilastot ja API-kutsujen säästöt.
+
+**Response:**
+```json
+{
+  "cacheHits": 45,
+  "cacheMisses": 15,
+  "totalRequests": 60,
+  "hitRate": "75.00%",
+  "apiCallsSaved": 45,
+  "message": "Cache saved 45 API calls! (Azure Free tier quota preserved)"
+}
+```
+
+### POST /api/receipts/cache/clear
+
+Tyhjentää cachen (admin-endpoint).
+
+**Response:**
+```json
+{
+  "message": "Cache cleared successfully"
+}
+```
+
 ## Provider-logiikka
 
 ### Auto Mode (provider: "auto")
@@ -273,15 +300,34 @@ var result = await response.Content.ReadFromJsonAsync<ScannedReceiptResult>();
 
 - **Tiedostokoko**: Max 10MB per kuitti
 - **CORS**: Konfiguroitavissa (oletuksena sallii kaikki dev-moodissa)
-- **Rate limiting**: Suositellaan lisättäväksi tuotantoon
+- **Rate limiting**: ✅ Toteutettu (10 req/min, 100 req/h per IP)
 - **Autentikointi**: Suositellaan Bearer token -autentikointia tuotantoon
+- **API secrets**: Käytä User Secrets (dev) / ympäristömuuttujia (prod)
+
+## Azure Free Tier -optimointi
+
+Tämä API sisältää älykkään caching-järjestelmän, joka vähentää Azure API -kutsuja 50-80%!
+
+**Keskeiset ominaisuudet:**
+- 📦 **Automaattinen cache** - Sama kuitti → ei API-kutsua
+- 🔄 **Ollama fallback** - Ilmainen lokaaliprosessointi
+- 📊 **Cache-tilastot** - Seuraa säästyneitä API-kutsuja
+
+```bash
+# Tarkista cache-tilastot
+curl http://localhost:5205/api/receipts/cache/stats
+```
+
+**Katso yksityiskohtaiset ohjeet:** [FREE_TIER_OPTIMIZATION.md](FREE_TIER_OPTIMIZATION.md)
 
 ## Jatkokehitysideoita
 
+- [x] ~~Rate limiting~~ (toteutettu)
+- [x] ~~In-memory caching~~ (toteutettu)
 - [ ] Unit- ja integraatiotestit
-- [ ] Rate limiting
 - [ ] Bearer token -autentikointi
 - [ ] Docker-tuki
+- [ ] Redis cache (multi-instance support)
 - [ ] Batch processing (useita kuitteja kerralla)
 - [ ] Webhook-tuki pitkille prosesseille
 - [ ] Kuitin kuvan tallennus blob storageen

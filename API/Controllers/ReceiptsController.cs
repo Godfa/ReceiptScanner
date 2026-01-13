@@ -12,13 +12,16 @@ namespace ReceiptScanner.API.Controllers;
 public class ReceiptsController : ControllerBase
 {
     private readonly IReceiptScannerService _scannerService;
+    private readonly IReceiptCacheService _cacheService;
     private readonly ILogger<ReceiptsController> _logger;
 
     public ReceiptsController(
         IReceiptScannerService scannerService,
+        IReceiptCacheService cacheService,
         ILogger<ReceiptsController> logger)
     {
         _scannerService = scannerService;
+        _cacheService = cacheService;
         _logger = logger;
     }
 
@@ -174,5 +177,36 @@ public class ReceiptsController : ControllerBase
             providerCount = providers.Count,
             timestamp = DateTime.UtcNow
         });
+    }
+
+    /// <summary>
+    /// Get cache statistics to monitor API call savings
+    /// </summary>
+    [HttpGet("cache/stats")]
+    [Produces("application/json")]
+    public ActionResult<CacheStatistics> GetCacheStatistics()
+    {
+        var stats = _cacheService.GetStatistics();
+        return Ok(new
+        {
+            cacheHits = stats.Hits,
+            cacheMisses = stats.Misses,
+            totalRequests = stats.Total,
+            hitRate = $"{stats.HitRate:F2}%",
+            apiCallsSaved = stats.Hits,
+            message = stats.Hits > 0
+                ? $"Cache saved {stats.Hits} API calls! (Azure Free tier quota preserved)"
+                : "No cache hits yet. Cache will save API calls when same receipt is scanned again."
+        });
+    }
+
+    /// <summary>
+    /// Clear the cache (admin endpoint)
+    /// </summary>
+    [HttpPost("cache/clear")]
+    public ActionResult ClearCache()
+    {
+        _cacheService.ClearCache();
+        return Ok(new { message = "Cache cleared successfully" });
     }
 }
