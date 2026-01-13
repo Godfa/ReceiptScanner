@@ -45,7 +45,10 @@ artifacts/
 # Windows
 Thumbs.db
 
-# Secrets
+# Secrets and configuration
+# Only commit appsettings.json and appsettings.Development.json with empty/default values
+# Use dotnet user-secrets for local development secrets
+# Use environment variables for production secrets
 appsettings.*.json
 !appsettings.json
 !appsettings.Development.json

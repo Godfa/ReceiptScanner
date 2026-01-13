@@ -42,22 +42,24 @@ ReceiptScanner/
 
 ### Konfiguraatio
 
-Muokkaa `API/appsettings.json` tai `API/appsettings.Development.json`:
+**TÄRKEÄÄ: Älä koskaan tallenna API-avaimia lähdekoodiin!**
 
-```json
-{
-  "Azure": {
-    "DocumentIntelligence": {
-      "Endpoint": "https://your-resource.cognitiveservices.azure.com/",
-      "ApiKey": "your-azure-api-key-here"
-    }
-  },
-  "Ollama": {
-    "BaseUrl": "http://localhost:11434",
-    "Model": "llama3.2-vision"
-  }
-}
+Kehitysympäristössä käytä .NET User Secrets:
+
+```bash
+cd API
+dotnet user-secrets set "Azure:DocumentIntelligence:Endpoint" "https://your-resource.cognitiveservices.azure.com/"
+dotnet user-secrets set "Azure:DocumentIntelligence:ApiKey" "your-api-key-here"
 ```
+
+Tuotannossa käytä ympäristömuuttujia:
+
+```bash
+Azure__DocumentIntelligence__Endpoint=https://your-resource.cognitiveservices.azure.com/
+Azure__DocumentIntelligence__ApiKey=your-api-key-here
+```
+
+**Katso yksityiskohtaiset ohjeet:** [CONFIGURATION.md](CONFIGURATION.md)
 
 **Huom:** Voit jättää toisen providerin tyhjäksi, palvelu käyttää vain konfiguroituja providereitä.
 
@@ -295,7 +297,7 @@ Projekti käyttää seuraavia kirjastoja:
 ## Tuki
 
 Ongelmatilanteissa tarkista:
-1. `appsettings.json` konfiguraatio on oikein
+1. User Secrets tai ympäristömuuttujat on asetettu oikein (katso [CONFIGURATION.md](CONFIGURATION.md))
 2. Azure API key ja endpoint ovat voimassa
 3. Ollama on käynnissä ja vision-malli ladattu (`ollama pull llama3.2-vision`)
 4. Tiedostokoko alle 10MB
