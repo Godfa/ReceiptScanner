@@ -18,10 +18,36 @@ Ollama settings are in `appsettings.json` since they're not sensitive:
 - Default URL: `http://localhost:11434`
 - Default model: `llama3.2-vision`
 
-To override in User Secrets:
+**Changing Ollama model:**
+
+Edit `appsettings.json` or `appsettings.Development.json`:
+```json
+{
+  "Ollama": {
+    "Enabled": true,
+    "BaseUrl": "http://localhost:11434",
+    "Model": "llava"  // Change this
+  }
+}
+```
+
+**Available vision models:**
+- `llama3.2-vision` - Recommended, best quality (11B params, ~7GB)
+- `llava` - Smaller, faster (7B params, ~4.7GB)
+- `llava:13b` - Better quality, slower (13B params, ~8GB)
+- `llava:34b` - Best quality, slowest (34B params, ~20GB)
+- `bakllava` - Alternative vision model (~5GB)
+
+**Install a model:**
+```bash
+ollama pull llama3.2-vision  # or any other model
+ollama list                   # See installed models
+```
+
+To override in User Secrets or environment variables:
 ```bash
 dotnet user-secrets set "Ollama:BaseUrl" "http://your-ollama-host:11434"
-dotnet user-secrets set "Ollama:Model" "llama3.2-vision"
+dotnet user-secrets set "Ollama:Model" "llava"
 ```
 
 ### Viewing Your Secrets

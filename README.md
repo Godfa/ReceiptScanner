@@ -59,9 +59,18 @@ Azure__DocumentIntelligence__Endpoint=https://your-resource.cognitiveservices.az
 Azure__DocumentIntelligence__ApiKey=your-api-key-here
 ```
 
+**Vaihda Ollama-malli:**
+
+Muokkaa `appsettings.json` tai `appsettings.Development.json`:
+```json
+"Ollama": {
+  "Model": "llava"  // llama3.2-vision (default), llava, llava:13b, bakllava
+}
+```
+
 **Katso yksityiskohtaiset ohjeet:** [CONFIGURATION.md](CONFIGURATION.md)
 
-**Huom:** Voit jättää toisen providerin tyhjäksi, palvelu käyttää vain konfiguroituja providereitä.
+**Huom:** Voit jättää toisen providerin tyhjäksi tai asettaa `Enabled: false`, palvelu käyttää vain konfiguroituja providereitä.
 
 ### Käynnistys
 
