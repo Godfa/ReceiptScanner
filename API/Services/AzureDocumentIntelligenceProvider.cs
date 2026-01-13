@@ -27,6 +27,13 @@ public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
 
     public bool IsAvailable()
     {
+        var enabled = _configuration.GetValue<bool>("Azure:DocumentIntelligence:Enabled", true);
+        if (!enabled)
+        {
+            _logger.LogDebug("Azure provider is disabled in configuration");
+            return false;
+        }
+
         var endpoint = _configuration["Azure:DocumentIntelligence:Endpoint"];
         var apiKey = _configuration["Azure:DocumentIntelligence:ApiKey"];
         return !string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey);

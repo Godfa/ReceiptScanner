@@ -29,6 +29,13 @@ public class OllamaVisionProvider : IReceiptScannerProvider
 
     public bool IsAvailable()
     {
+        var enabled = _configuration.GetValue<bool>("Ollama:Enabled", true);
+        if (!enabled)
+        {
+            _logger.LogDebug("Ollama provider is disabled in configuration");
+            return false;
+        }
+
         var baseUrl = _configuration["Ollama:BaseUrl"];
         var model = _configuration["Ollama:Model"];
         return !string.IsNullOrEmpty(baseUrl) && !string.IsNullOrEmpty(model);
