@@ -123,38 +123,56 @@ public class OllamaVisionProvider : IReceiptScannerProvider
     }
 
     private static string BuildPrompt(string language)
+{
+    var langInstruction = language.ToLower() switch
     {
-        var langInstruction = language.ToLower() switch
-        {
-            "fi" => "The receipt is in Finnish.",
-            "sv" => "The receipt is in Swedish.",
-            "en" => "The receipt is in English.",
-            _ => ""
-        };
+        "fi" => "The receipt is in Finnish.",
+        "sv" => "The receipt is in Swedish.",
+        "en" => "The receipt is in English.",
+        _ => ""
+    };
 
-        return $$"""
-            You are a receipt parser. Extract line items from this receipt image.
-            {{langInstruction}}
+    return $$"""
+You are a receipt line-item extraction engine.
+{{langInstruction}}
 
-            Return ONLY a JSON object with this exact structure (no additional text):
-            {
-              "merchantName": "Store name",
-              "date": "YYYY-MM-DD",
-              "items": [
-                {"description": "Item name", "quantity": 1, "unitPrice": 1.50, "lineTotal": 1.50}
-              ],
-              "total": 10.50
-            }
+Your task is to extract purchasable items ONLY.
 
-            Rules:
-            - Extract ALL line items with prices
-            - If quantity is not shown, use 1
-            - If only total price shown, calculate unitPrice = lineTotal / quantity
-            - Round prices to 2 decimals
-            - Skip non-product lines (headers, footers, payment info)
-            - Return valid JSON only
-            """;
+Return output wrapped EXACTLY like this:
+<json>
+{ ... }
+</json>
+
+The JSON structure MUST be:
+{
+  "merchantName": string | null,
+  "date": string | null,        // ISO YYYY-MM-DD, or null
+  "items": [
+    {
+      "description": string,
+      "quantity": number,
+      "unitPrice": number,
+      "lineTotal": number
     }
+  ],
+  "total": number | null
+}
+
+STRICT RULES:
+- Do NOT guess merchant name or date; return null if unclear
+- Extract ONLY product/service rows (no VAT, totals, payments, footers)
+- Quantity defaults to 1 if not explicitly shown
+- If only lineTotal is shown, calculate unitPrice = lineTotal / quantity
+- Prices must be numeric decimals with max 2 decimal places
+- Refunds or returns may have negative values
+- If math is inconsistent, use the numbers printed on the receipt
+- Return VALID JSON only inside <json> tags
+- No explanations, no commentary outside <json>
+
+Failure to follow format is an error.
+""";
+}
+
 
     private ScannedReceiptResult ParseReceiptFromText(string text)
     {
@@ -167,10 +185,10 @@ public class OllamaVisionProvider : IReceiptScannerProvider
         try
         {
             // Try to extract JSON from the response
-            var jsonMatch = Regex.Match(text, @"\{[\s\S]*\}", RegexOptions.Multiline);
-            if (!jsonMatch.Success)
+            var jsonPayload = ExtractJsonPayload(text);
+           if (jsonPayload == null)
             {
-                warnings.Add("Could not find JSON in Ollama response");
+                warnings.Add("JSON sentinel tags not found in Ollama response");
                 return new ScannedReceiptResult
                 {
                     Lines = lines,
@@ -179,8 +197,7 @@ public class OllamaVisionProvider : IReceiptScannerProvider
                 };
             }
 
-            var json = jsonMatch.Value;
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(jsonPayload);
             var root = doc.RootElement;
 
             // Extract merchant name
@@ -209,52 +226,73 @@ public class OllamaVisionProvider : IReceiptScannerProvider
             }
 
             // Extract items
-            if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty("items", out var itemsProp) &&
+                itemsProp.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in itemsProp.EnumerateArray())
                 {
                     if (!item.TryGetProperty("description", out var descProp))
                         continue;
 
-                    var description = descProp.GetString();
+                    var description = descProp.GetString()?.Trim();
                     if (string.IsNullOrWhiteSpace(description))
                         continue;
 
-                    var quantity = 1m;
-                    if (item.TryGetProperty("quantity", out var qtyProp))
+                    // Quantity (default = 1)
+                    decimal quantity = 1m;
+                    if (item.TryGetProperty("quantity", out var qtyProp) &&
+                        qtyProp.ValueKind == JsonValueKind.Number)
                     {
-                        quantity = qtyProp.ValueKind == JsonValueKind.Number
-                            ? qtyProp.GetDecimal()
-                            : 1m;
+                        quantity = qtyProp.GetDecimal();
                     }
 
-                    var unitPrice = 0m;
-                    if (item.TryGetProperty("unitPrice", out var priceProp))
+                        // Unit price (optional)
+                    decimal? unitPrice = null;
+                    if (item.TryGetProperty("unitPrice", out var unitProp) &&
+                        unitProp.ValueKind == JsonValueKind.Number)
                     {
-                        unitPrice = priceProp.ValueKind == JsonValueKind.Number
-                            ? priceProp.GetDecimal()
-                            : 0m;
+                        unitPrice = unitProp.GetDecimal();
                     }
 
-                    var lineTotal = 0m;
-                    if (item.TryGetProperty("lineTotal", out var totalProp2))
+                    // Line total (optional)
+                    decimal? lineTotal = null;
+                    if (item.TryGetProperty("lineTotal", out var totalProp2) &&
+                        totalProp2.ValueKind == JsonValueKind.Number)
                     {
-                        lineTotal = totalProp2.ValueKind == JsonValueKind.Number
-                            ? totalProp2.GetDecimal()
-                            : quantity * unitPrice;
+                        lineTotal = totalProp2.GetDecimal();
                     }
-                    else
+
+                    // Infer missing values
+                    if (lineTotal == null && unitPrice != null)
+                        lineTotal = Math.Round(quantity * unitPrice.Value, 2);
+
+                    if (unitPrice == null && lineTotal != null && quantity != 0)
+                        unitPrice = Math.Round(lineTotal.Value / quantity, 2);
+
+                        // Final safety net
+                    unitPrice ??= 0m;
+                    lineTotal ??= 0m;
+
+                    // Sanity checks
+                    if (quantity <= 0)
+                            warnings.Add($"Invalid quantity for item '{description}'");
+
+                    var expected = Math.Round(quantity * unitPrice.Value, 2);
+                    if (Math.Abs(expected - lineTotal.Value) > 0.02m)
                     {
-                        lineTotal = quantity * unitPrice;
+                        warnings.Add(
+                            $"Line math mismatch for '{description}': " +
+                            $"{quantity} x {unitPrice:F2} ≠ {lineTotal:F2}"
+                        );
                     }
 
                     lines.Add(new ScannedReceiptLine
-                    {
-                        Description = description.Trim(),
-                        Quantity = quantity,
-                        UnitPrice = unitPrice,
-                        LineTotal = lineTotal
-                    });
+                        {
+                            Description = description,
+                            Quantity = quantity,
+                            UnitPrice = unitPrice.Value,
+                            LineTotal = lineTotal.Value
+                        });
                 }
             }
 
@@ -262,6 +300,33 @@ public class OllamaVisionProvider : IReceiptScannerProvider
             {
                 warnings.Add("No line items extracted from receipt");
             }
+
+            // Reconcile totals
+            var computedSum = Math.Round(lines.Sum(l => l.LineTotal), 2);
+            if (total.HasValue)
+            {
+                var delta = Math.Abs(computedSum - total.Value);
+                if (delta > 0.05m)
+                {
+                    warnings.Add(
+                        $"Total mismatch: sum(items)={computedSum:F2} vs receipt total={total:F2}"
+                    );
+                }
+            }
+            else
+            {
+                warnings.Add("Receipt total not provided by model");
+            }
+
+            return new ScannedReceiptResult
+            {
+                Lines = lines,
+                Total = total,
+                MerchantName = merchantName,
+                ReceiptDate = receiptDate,
+                Warnings = warnings,
+                RawText = text
+            };  
         }
         catch (JsonException ex)
         {
@@ -273,17 +338,25 @@ public class OllamaVisionProvider : IReceiptScannerProvider
                 RawText = text
             };
         }
-
-        return new ScannedReceiptResult
-        {
-            Lines = lines,
-            Total = total,
-            MerchantName = merchantName,
-            ReceiptDate = receiptDate,
-            Warnings = warnings,
-            RawText = text
-        };
     }
+
+    private static string? ExtractJsonPayload(string text)
+    {
+        const string start = "<json>";
+        const string end = "</json>";
+
+        var startIdx = text.IndexOf(start, StringComparison.OrdinalIgnoreCase);
+        var endIdx = text.IndexOf(end, StringComparison.OrdinalIgnoreCase);
+
+        if (startIdx < 0 || endIdx < 0 || endIdx <= startIdx)
+            return null;
+
+        return text.Substring(
+            startIdx + start.Length,
+            endIdx - (startIdx + start.Length)
+        ).Trim();
+    }
+
 
     private record OllamaResponse
     {
