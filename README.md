@@ -36,7 +36,7 @@ ReceiptScanner/
 
 ### Esivalmistelut
 
-1. .NET 8.0 SDK tai uudempi
+1. .NET 10 SDK tai uudempi
 2. (Valinnainen) Azure AI Document Intelligence -resurssit
 3. (Valinnainen) Ollama vision -malli (esim. llama3.2-vision)
 
