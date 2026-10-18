@@ -4,7 +4,7 @@ Get the Receipt Scanner API up and running in 5 minutes.
 
 ## 1. Prerequisites
 
-- .NET 8.0 SDK installed
+- .NET 10 SDK installed
 - (Optional) Azure AI Document Intelligence resource
 - (Optional) Ollama with llama3.2-vision model
 
