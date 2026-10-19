@@ -68,7 +68,7 @@ Järjestelmä käyttää **Strategy Pattern** -mallia, jossa:
 
 ### NuGet-paketit
 
-- **Azure.AI.FormRecognizer** (4.1.0) - Azure Document Intelligence SDK
+- **Azure.AI.DocumentIntelligence** (1.0.0) - Azure Document Intelligence SDK
 - **Swashbuckle.AspNetCore** (7.2.0) - Swagger/OpenAPI tools
 - **Microsoft.AspNetCore.OpenApi** (10.0.1) - OpenAPI spec generation
 

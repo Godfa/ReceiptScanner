@@ -1,19 +1,19 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Azure;
-using Azure.AI.FormRecognizer.DocumentAnalysis;
+using Azure.AI.DocumentIntelligence;
 using ReceiptScanner.API.Models;
 
 namespace ReceiptScanner.API.Services;
 
 /// <summary>
-/// Receipt scanner using Azure AI Document Intelligence (Form Recognizer)
+/// Receipt scanner using Azure AI Document Intelligence
 /// </summary>
 public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<AzureDocumentIntelligenceProvider> _logger;
-    private DocumentAnalysisClient? _client;
+    private DocumentIntelligenceClient? _client;
 
     public string ProviderName => "azure";
 
@@ -56,12 +56,11 @@ public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
             _client ??= CreateClient();
 
             // Use prebuilt receipt model
-            using var stream = new MemoryStream(imageData);
             var operation = await _client.AnalyzeDocumentAsync(
                 WaitUntil.Completed,
                 "prebuilt-receipt",
-                stream,
-                cancellationToken: cancellationToken);
+                BinaryData.FromBytes(imageData),
+                cancellationToken);
 
             var result = operation.Value;
             var lines = new List<ScannedReceiptLine>();
@@ -75,36 +74,34 @@ public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
             {
                 // Extract merchant name
                 if (document.Fields.TryGetValue("MerchantName", out var merchantField)
-                    && merchantField.FieldType == DocumentFieldType.String)
+                    && merchantField.ValueString != null)
                 {
-                    merchantName = merchantField.Value.AsString();
+                    merchantName = merchantField.ValueString;
                 }
 
                 // Extract transaction date
                 if (document.Fields.TryGetValue("TransactionDate", out var dateField)
-                    && dateField.FieldType == DocumentFieldType.Date)
+                    && dateField.ValueDate.HasValue)
                 {
-                    var dateOnly = dateField.Value.AsDate();
+                    var dateOnly = dateField.ValueDate.Value;
                     receiptDate = new DateTime(dateOnly.Year, dateOnly.Month, dateOnly.Day);
                 }
 
                 // Extract total
-                if (document.Fields.TryGetValue("Total", out var totalField)
-                    && totalField.FieldType == DocumentFieldType.Double)
+                if (document.Fields.TryGetValue("Total", out var totalField))
                 {
-                    totalAmount = (decimal)totalField.Value.AsDouble();
+                    totalAmount = GetAmount(totalField);
                 }
 
                 // Extract line items
                 if (document.Fields.TryGetValue("Items", out var itemsField)
-                    && itemsField.FieldType == DocumentFieldType.List)
+                    && itemsField.ValueList != null)
                 {
-                    foreach (var item in itemsField.Value.AsList())
+                    foreach (var item in itemsField.ValueList)
                     {
-                        if (item.FieldType != DocumentFieldType.Dictionary)
+                        var itemDict = item.ValueDictionary;
+                        if (itemDict == null)
                             continue;
-
-                        var itemDict = item.Value.AsDictionary();
 
                         string? description = null;
                         decimal? quantity = null;
@@ -113,28 +110,25 @@ public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
                         decimal? confidence = null;
 
                         if (itemDict.TryGetValue("Description", out var descField)
-                            && descField.FieldType == DocumentFieldType.String)
+                            && descField.ValueString != null)
                         {
-                            description = descField.Value.AsString();
+                            description = descField.ValueString;
                             confidence = (decimal?)descField.Confidence;
                         }
 
-                        if (itemDict.TryGetValue("Quantity", out var qtyField)
-                            && qtyField.FieldType == DocumentFieldType.Double)
+                        if (itemDict.TryGetValue("Quantity", out var qtyField))
                         {
-                            quantity = (decimal)qtyField.Value.AsDouble();
+                            quantity = GetAmount(qtyField);
                         }
 
-                        if (itemDict.TryGetValue("Price", out var priceField)
-                            && priceField.FieldType == DocumentFieldType.Double)
+                        if (itemDict.TryGetValue("Price", out var priceField))
                         {
-                            price = (decimal)priceField.Value.AsDouble();
+                            price = GetAmount(priceField);
                         }
 
-                        if (itemDict.TryGetValue("TotalPrice", out var totalPriceField)
-                            && totalPriceField.FieldType == DocumentFieldType.Double)
+                        if (itemDict.TryGetValue("TotalPrice", out var totalPriceField))
                         {
-                            totalPrice = (decimal)totalPriceField.Value.AsDouble();
+                            totalPrice = GetAmount(totalPriceField);
                         }
 
                         // Skip items without description
@@ -195,12 +189,24 @@ public class AzureDocumentIntelligenceProvider : IReceiptScannerProvider
         }
     }
 
-    private DocumentAnalysisClient CreateClient()
+    /// <summary>
+    /// Reads a numeric or currency field as a decimal (prebuilt-receipt returns prices as currency values).
+    /// </summary>
+    private static decimal? GetAmount(DocumentField field)
+    {
+        if (field.ValueCurrency != null)
+            return (decimal)field.ValueCurrency.Amount;
+        if (field.ValueDouble.HasValue)
+            return (decimal)field.ValueDouble.Value;
+        return null;
+    }
+
+    private DocumentIntelligenceClient CreateClient()
     {
         var endpoint = _configuration["Azure:DocumentIntelligence:Endpoint"]!;
         var apiKey = _configuration["Azure:DocumentIntelligence:ApiKey"]!;
 
-        return new DocumentAnalysisClient(
+        return new DocumentIntelligenceClient(
             new Uri(endpoint),
             new AzureKeyCredential(apiKey));
     }
