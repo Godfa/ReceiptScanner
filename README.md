@@ -346,7 +346,7 @@ curl http://localhost:5205/api/receipts/cache/stats
 ## Lisenssit
 
 Projekti käyttää seuraavia kirjastoja:
-- **Azure.AI.FormRecognizer** - Azure SDK for .NET (MIT)
+- **Azure.AI.DocumentIntelligence** - Azure SDK for .NET (MIT)
 - **Swashbuckle.AspNetCore** - Swagger/OpenAPI tools (MIT)
 
 ## Tuki
